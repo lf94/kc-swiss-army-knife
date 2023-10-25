@@ -98,7 +98,6 @@ const main = async () => {
     hide: true,
     origin: {x: 0, y: 0, z: 0},
     size: 60,
-    type: "make_plane",
     x_axis:  {x: 1, y: 0, z: 0},
     y_axis:  {x: 0, y: 1, z: 0}
   });
