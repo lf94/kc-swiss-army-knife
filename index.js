@@ -154,8 +154,13 @@ NodeDataChannelModule.then((NodeDataChannel) => {
       // console.log("ArrayBuffer");
       obj = BSON.deserialize(chunk);
     }
+
+    // Queue up another cylinder baby
+    if (obj.request_id == shape_id) {
+        shape_id = createSpicyCylinder({ x: 0.1, y: 0, z: 0 });
+    }
+
     if (obj.success) {
-      // console.log(obj.resp.type);
       (handlers[obj.resp.type] || console.log)(obj.resp.data);
     } else console.log(obj);
   });
@@ -170,7 +175,15 @@ NodeDataChannelModule.then((NodeDataChannel) => {
     send(cmd);
   };
 
-  const createSpicyCylinder = (plane_id, position) => {
+  const createSpicyCylinder = (position) => {
+    const plane_id = make_plane({
+      clobber: false,
+      hide: true,
+      origin: { x: 0, y: 0, z: 0 },
+      size:  60,
+      x_axis: {x: 1, y: 0, z: 0},
+      y_axis: {x: 0, y: 1, z: 0},
+    });
     sketch_mode_enable({ plane_id, ortho: false, animated: false });
     const path = start_path();
     move_path_pen({ path, to: position });
@@ -208,22 +221,12 @@ NodeDataChannelModule.then((NodeDataChannel) => {
     });
     close_path({ path_id: path });
     sketch_mode_disable();
-    extrude({ target: path, distance: 1, cap: true });
+    return extrude({ target: path, distance: 1, cap: true });
   };
 
+  var shape_id;
   const main = async () => {
-    const plane_id = make_plane({
-      clobber: false,
-      hide: true,
-      origin: { x: 0, y: 0, z: 0 },
-      size:  60,
-      x_axis: {x: 1, y: 0, z: 0},
-      y_axis: {x: 0, y: 1, z: 0},
-    });
-
-    for (let i = 0; i < 300000; i++)  {
-      createSpicyCylinder(plane_id, { x: 0.1 * i, y: 0, z: 0 });
-    }
+    shape_id = createSpicyCylinder({ x: 0.1, y: 0, z: 0 });
 
     // export is a reserved keyword
     // global["export"]({
