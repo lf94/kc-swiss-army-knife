@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const NodeDataChannelModule = import("node-datachannel");
 const { WebSocket } = require("ws");
 
-let stats = { bytesSentPerSec: 0, bytesSentTotal: 0, reqPerSeq: 0 };
+let stats = { bytesSentPerSec: 0, bytesSentTotal: 0, guesstimateRam: 0, reqPerSeq: 0 };
 
 NodeDataChannelModule.then((NodeDataChannel) => {
   NodeDataChannel.initLogger("Debug");
@@ -20,6 +20,8 @@ NodeDataChannelModule.then((NodeDataChannel) => {
     console.log("Speed: " + n.toFixed(2) + ["B","KiB","MiB","GiB"][d] + "/s");
     const [ m, e ] = prettyBytes(stats.bytesSentTotal, 0);
     console.log("Total: " + m + ["B","KiB","MiB","GiB"][e]);
+    const [ o, f ] = prettyBytes(stats.guesstimateRam, 0);
+    console.log("Guesstimate RAM: " + o + ["B","KiB","MiB","GiB"][f]);
     console.log("Req/s: " + stats.reqPerSeq);
     stats.bytesSentPerSec = 0;
     stats.reqPerSeq = 0;
@@ -157,6 +159,7 @@ NodeDataChannelModule.then((NodeDataChannel) => {
 
     // Queue up another cylinder baby
     if (obj.request_id == shape_id) {
+        stats.guesstimateRam += 60000;
         shape_id = createSpicyCylinder({ x: 0.1, y: 0, z: 0 });
     }
 
