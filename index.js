@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const NodeDataChannelModule = import("node-datachannel");
 const { WebSocket } = require("ws");
 
-let stats = { bytesSentPerSec: 0, bytesSentTotal: 0 };
+let stats = { bytesSentPerSec: 0, bytesSentTotal: 0, reqPerSeq: 0 };
 
 NodeDataChannelModule.then((NodeDataChannel) => {
   NodeDataChannel.initLogger("Debug");
@@ -20,7 +20,9 @@ NodeDataChannelModule.then((NodeDataChannel) => {
     console.log("Speed: " + n.toFixed(2) + ["B","KiB","MiB","GiB"][d] + "/s");
     const [ m, e ] = prettyBytes(stats.bytesSentTotal, 0);
     console.log("Total: " + m + ["B","KiB","MiB","GiB"][e]);
+    console.log("Req/s: " + stats.reqPerSeq);
     stats.bytesSentPerSec = 0;
+    stats.reqPerSeq = 0;
   }, 1000);
 
   const te = new TextEncoder();
@@ -28,6 +30,7 @@ NodeDataChannelModule.then((NodeDataChannel) => {
     const str = JSON.stringify(payload);
     stats.bytesSentPerSec += str.length;
     stats.bytesSentTotal += str.length;
+    stats.reqPerSeq += 1;
     ws.send(str);
   };
 
@@ -218,7 +221,7 @@ NodeDataChannelModule.then((NodeDataChannel) => {
       y_axis: {x: 0, y: 1, z: 0},
     });
 
-    for (let i = 0; i < 30000; i++)  {
+    for (let i = 0; i < 300000; i++)  {
       createSpicyCylinder(plane_id, { x: 0.1 * i, y: 0, z: 0 });
     }
 
