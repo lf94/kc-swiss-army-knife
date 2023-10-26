@@ -5,11 +5,31 @@ const fs = require("node:fs");
 const NodeDataChannelModule = import("node-datachannel");
 const { WebSocket } = require("ws");
 
+let stats = { bytesSentPerSec: 0, bytesSentTotal: 0 };
+
 NodeDataChannelModule.then((NodeDataChannel) => {
   NodeDataChannel.initLogger("Debug");
 
+  const prettyBytes = (n, d) => {
+    if (n > 1024) return prettyBytes(n / 1024, d + 1);
+    else return [ n, d ];
+  };
+
+  setInterval(() => {
+    const [ n, d ] = prettyBytes(stats.bytesSentPerSec, 0);
+    console.log("Speed: " + n.toFixed(2) + ["B","KiB","MiB","GiB"][d] + "/s");
+    const [ m, e ] = prettyBytes(stats.bytesSentTotal, 0);
+    console.log("Total: " + m + ["B","KiB","MiB","GiB"][e]);
+    stats.bytesSentPerSec = 0;
+  }, 1000);
+
   const te = new TextEncoder();
-  const send = (payload) => ws.send(JSON.stringify(payload));
+  const send = (payload) => {
+    const str = JSON.stringify(payload);
+    stats.bytesSentPerSec += str.length;
+    stats.bytesSentTotal += str.length;
+    ws.send(str);
+  };
 
   let queue = [];
 
@@ -92,7 +112,7 @@ NodeDataChannelModule.then((NodeDataChannel) => {
     }
     // Continue to fire off commands in the queue.
     const cmd = queue.shift();
-    console.log(cmd);
+    // console.log(cmd);
     send(cmd);
   };
   handlers["export"] = (args) => {
@@ -121,18 +141,18 @@ NodeDataChannelModule.then((NodeDataChannel) => {
 
   const td = new TextDecoder();
   ws.on("message", (chunk) => {
-    console.log("message");
+    // console.log("message");
     let obj;
     if (chunk instanceof Buffer) {
-      console.log("Buffer");
+      // console.log("Buffer");
       obj = JSON.parse(td.decode(chunk));
     }
     if (chunk instanceof ArrayBuffer) {
-      console.log("ArrayBuffer");
+      // console.log("ArrayBuffer");
       obj = BSON.deserialize(chunk);
     }
     if (obj.success) {
-      console.log(obj.resp.type);
+      // console.log(obj.resp.type);
       (handlers[obj.resp.type] || console.log)(obj.resp.data);
     } else console.log(obj);
   });
@@ -143,7 +163,7 @@ NodeDataChannelModule.then((NodeDataChannel) => {
   // Kick off the requests.
   const ignition = () => {
     const cmd = queue.shift();
-    console.log(cmd);
+    // console.log(cmd);
     send(cmd);
   };
 
@@ -198,7 +218,7 @@ NodeDataChannelModule.then((NodeDataChannel) => {
       y_axis: {x: 0, y: 1, z: 0},
     });
 
-    for (let i = 0; i < 300000; i++)  {
+    for (let i = 0; i < 30000; i++)  {
       createSpicyCylinder(plane_id, { x: 0.1 * i, y: 0, z: 0 });
     }
 
