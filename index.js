@@ -1,7 +1,9 @@
 // Derived from KCMA https://github.com/KittyCAD/modeling-app
-const { WebSocket } = require("ws");
+const { BSON, EJSON } = require("bson");
 const { randomUUID: uuidv4 } = require('node:crypto');
+const fs = require("node:fs");
 const NodeDataChannelModule = import("node-datachannel");
+const { WebSocket } = require("ws");
 
 NodeDataChannelModule.then((NodeDataChannel) => {
   NodeDataChannel.initLogger("Debug");
@@ -9,7 +11,11 @@ NodeDataChannelModule.then((NodeDataChannel) => {
   const te = new TextEncoder();
   const send = (payload) => ws.send(JSON.stringify(payload));
 
-  const commands = [ "make_axes_gizmo", "make_plane", ];
+  let queue = [];
+
+  const commands = [ "make_axes_gizmo", "make_plane", "sketch_mode_enable",
+  "start_path", "move_path_pen", "extend_path", "close_path", "sketch_mode_disable",
+  "extrude", "export"];
   for (const command of commands) {
     global[command] = (args) => {
       const payload = {
@@ -20,7 +26,8 @@ NodeDataChannelModule.then((NodeDataChannel) => {
         cmd_id: uuidv4(),
         type: "modeling_cmd_req"
       };
-      send(payload);
+      queue.push(payload);
+      return payload.cmd_id;
     };
   };
 
@@ -78,6 +85,21 @@ NodeDataChannelModule.then((NodeDataChannel) => {
     console.log(args);
     pc.setRemoteDescription(args.answer.sdp, args.answer.type);
   };
+  handlers["modeling"] = (args) => {
+    if (queue.length == 0) {
+      console.log("No more commands");
+      return;
+    }
+    // Continue to fire off commands in the queue.
+    const cmd = queue.shift();
+    console.log(cmd);
+    send(cmd);
+  };
+  handlers["export"] = (args) => {
+    const file = args.files[0];
+    fs.writeFileSync(file.name, file.contents.read(0, file.contents.length));
+    console.log("Wrote " + file.name);
+  };
 
   const cookie = "__Secure-next-auth.session-token=69781ba1-482d-4108-b9a5-90b6ae03bf65";
 
@@ -100,7 +122,15 @@ NodeDataChannelModule.then((NodeDataChannel) => {
   const td = new TextDecoder();
   ws.on("message", (chunk) => {
     console.log("message");
-    const obj = JSON.parse(td.decode(chunk));
+    let obj;
+    if (chunk instanceof Buffer) {
+      console.log("Buffer");
+      obj = JSON.parse(td.decode(chunk));
+    }
+    if (chunk instanceof ArrayBuffer) {
+      console.log("ArrayBuffer");
+      obj = BSON.deserialize(chunk);
+    }
     if (obj.success) {
       console.log(obj.resp.type);
       (handlers[obj.resp.type] || console.log)(obj.resp.data);
@@ -110,15 +140,79 @@ NodeDataChannelModule.then((NodeDataChannel) => {
   setInterval(() => { console.log("ping"); ws.ping(); }, 10000);
   ws.on("pong", () => console.log("pong"));
 
+  // Kick off the requests.
+  const ignition = () => {
+    const cmd = queue.shift();
+    console.log(cmd);
+    send(cmd);
+  };
+
+  const createSpicyCylinder = (plane_id, position) => {
+    sketch_mode_enable({ plane_id, ortho: false, animated: false });
+    const path = start_path();
+    move_path_pen({ path, to: position });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "line",
+        end: { x: 0.1, y: 0, z: 0},
+        relative: true,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    close_path({ path_id: path });
+    sketch_mode_disable();
+    extrude({ target: path, distance: 1, cap: true });
+  };
+
   const main = async () => {
-    make_axes_gizmo({ clobber: false, gizmo_mode: true });
-    make_plane({
+    const plane_id = make_plane({
       clobber: false,
       hide: true,
-      origin: {x: 0, y: 0, z: 0},
-      size: 60,
-      x_axis:  {x: 1, y: 0, z: 0},
-      y_axis:  {x: 0, y: 1, z: 0}
+      origin: { x: 0, y: 0, z: 0 },
+      size:  60,
+      x_axis: {x: 1, y: 0, z: 0},
+      y_axis: {x: 0, y: 1, z: 0},
     });
+
+    for (let i = 0; i < 300000; i++)  {
+      createSpicyCylinder(plane_id, { x: 0.1 * i, y: 0, z: 0 });
+    }
+
+    // export is a reserved keyword
+    // global["export"]({
+    //   entity_ids: [],
+    //   source_unit: "in",
+    //   format: {
+    //     type: "gltf",
+    //     storage: "binary",
+    //     presentation: "pretty"
+    //   }
+    // });
+
+    ignition();
   };
 });
