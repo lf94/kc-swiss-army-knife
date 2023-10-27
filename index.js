@@ -183,7 +183,7 @@ NodeDataChannelModule.then((NodeDataChannel) => {
 
     // Queue up another cylinder baby
     if (obj.request_id == shape_id) {
-      stats.guesstimateRam += 60000;
+      stats.guesstimateRam += 60000 * 10;
       stats.shapes += 1;
       shape_id = createSpicyCylinder({ x: 0.1 * stats.shapes, y: 0, z: 0 });
     }
@@ -216,6 +216,222 @@ NodeDataChannelModule.then((NodeDataChannel) => {
     batch_start();
     const path = start_path();
     move_path_pen({ path, to: position });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "line",
+        end: { x: 0.1, y: 0, z: 0},
+        relative: true,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "line",
+        end: { x: 0.1, y: 0, z: 0},
+        relative: true,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "line",
+        end: { x: 0.1, y: 0, z: 0},
+        relative: true,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "line",
+        end: { x: 0.1, y: 0, z: 0},
+        relative: true,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "line",
+        end: { x: 0.1, y: 0, z: 0},
+        relative: true,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "line",
+        end: { x: 0.1, y: 0, z: 0},
+        relative: true,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "line",
+        end: { x: 0.1, y: 0, z: 0},
+        relative: true,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "line",
+        end: { x: 0.1, y: 0, z: 0},
+        relative: true,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "line",
+        end: { x: 0.1, y: 0, z: 0},
+        relative: true,
+      }
+    });
+    extend_path({
+      path,
+      segment: {
+        type: "tangential_arc",
+        offset: { unit: "degrees", value: 359 },
+        radius: 1000,
+      }
+    });
     extend_path({
       path,
       segment: {
