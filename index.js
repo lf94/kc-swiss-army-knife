@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const NodeDataChannelModule = import("node-datachannel");
 const { WebSocket } = require("ws");
 
-let stats = { bytesSentPerSec: 0, bytesSentTotal: 0, guesstimateRam: 0, reqPerSeq: 0 };
+let stats = { bytesSentPerSec: 0, bytesSentTotal: 0, guesstimateRam: 0, reqPerSeq: 0, shapes: 0 };
 
 NodeDataChannelModule.then((NodeDataChannel) => {
   NodeDataChannel.initLogger("Debug");
@@ -40,7 +40,24 @@ NodeDataChannelModule.then((NodeDataChannel) => {
 
   const commands = [ "make_axes_gizmo", "make_plane", "sketch_mode_enable",
   "start_path", "move_path_pen", "extend_path", "close_path", "sketch_mode_disable",
-  "extrude", "export"];
+  "extrude", "export", "modeling_cmd_req"];
+
+  const modeling_cmd_batch_req = (args) => {
+    let requests = [];
+    let a;
+    while ((a = queue.shift()) != "batch_end") {
+      requests.push(a);
+    }
+    const payload = {
+      requests,
+      type: "modeling_cmd_batch_req"
+    };
+    return queue.push(payload);
+  }
+
+  const batch_start = () => queue.push("batch_start");
+  const batch_end = () => queue.push("batch_end");
+  
   for (const command of commands) {
     global[command] = (args) => {
       const payload = {
@@ -112,11 +129,18 @@ NodeDataChannelModule.then((NodeDataChannel) => {
   };
   handlers["modeling"] = (args) => {
     if (queue.length == 0) {
-      console.log("No more commands");
+      // console.log("No more commands");
       return;
     }
     // Continue to fire off commands in the queue.
-    const cmd = queue.shift();
+    let cmd = queue.shift();
+
+    // Unload the batch into the queue as a single command.
+    if (cmd == "batch_start") {
+      modeling_cmd_batch_req();
+      cmd = queue.shift();
+    }
+
     // console.log(cmd);
     send(cmd);
   };
@@ -159,8 +183,9 @@ NodeDataChannelModule.then((NodeDataChannel) => {
 
     // Queue up another cylinder baby
     if (obj.request_id == shape_id) {
-        stats.guesstimateRam += 60000;
-        shape_id = createSpicyCylinder({ x: 0.1, y: 0, z: 0 });
+      stats.guesstimateRam += 60000;
+      stats.shapes += 1;
+      shape_id = createSpicyCylinder({ x: 0.1 * stats.shapes, y: 0, z: 0 });
     }
 
     if (obj.success) {
@@ -188,6 +213,7 @@ NodeDataChannelModule.then((NodeDataChannel) => {
       y_axis: {x: 0, y: 1, z: 0},
     });
     sketch_mode_enable({ plane_id, ortho: false, animated: false });
+    batch_start();
     const path = start_path();
     move_path_pen({ path, to: position });
     extend_path({
@@ -224,7 +250,9 @@ NodeDataChannelModule.then((NodeDataChannel) => {
     });
     close_path({ path_id: path });
     sketch_mode_disable();
-    return extrude({ target: path, distance: 1, cap: true });
+    const shape_id = extrude({ target: path, distance: 1, cap: true });
+    batch_end();
+    return shape_id;
   };
 
   var shape_id;
@@ -241,7 +269,7 @@ NodeDataChannelModule.then((NodeDataChannel) => {
     //     presentation: "pretty"
     //   }
     // });
-
+  
     ignition();
   };
 });
