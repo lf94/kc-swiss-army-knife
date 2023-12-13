@@ -1,18 +1,16 @@
 {
-  "name": "kittycadjs",
+  "name": "cloud-points",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "main.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "bson": "^6.2.0",
-    "dgram": "^1.0.1",
-    "lindenmayer": "^1.5.4",
-    "node-datachannel": "^0.5.0",
-    "ws": "^8.14.2"
+    "convex-hull": "^1.0.3",
+    "gl-matrix": "^3.4.3",
+    "hull.js": "^1.0.4"
   }
 }
