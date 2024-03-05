@@ -16,19 +16,26 @@ const prettyUnits = (g, us) => (n, d) => {
 
 const prettyBytes = prettyUnits(1024, ["B","KiB","MiB","GiB","TiB","PiB"]);
 
+const cbs = {};
+
 const KittyCADBridgeClient = (port) => {
   const obj = {};
+  // User registered callbacks for commands that return data
 
    // Add more as needed or as they become available
   const commands = [ "make_axes_gizmo", "make_plane", "sketch_mode_enable",
   "start_path", "move_path_pen", "extend_path", "close_path", "sketch_mode_disable",
   "extrude", "export", "modeling_cmd_req", "reconfigure_stream",
-  "import_files", "default_camera_zoom"];
+  "import_files", "default_camera_zoom", "object_bring_to_front",
+  "solid3d_fillet_edge", "solid3d_get_extrusion_face_info",
+  "solid3d_get_opposite_edge", "default_camera_focus_on"];
 
-  const ws = new WebSocket("ws://localhost:4999", []);
+  const ws = new WebSocket("ws://localhost:" + port, []);
 
   return new Promise((resolve, reject) => {
     ws.on("open", () => {
+      console.log("open bridge");
+
       // Signals the server to send all the commands to KittyCAD.
       obj["done"] = () => ws.send("done");
 
@@ -37,7 +44,7 @@ const KittyCADBridgeClient = (port) => {
       obj["batch_end"] = () => ws.send("batch_end");
 
       for (const command of commands) {
-        obj[command] = (args) => {
+        obj[command] = (args, cb) => {
           const payload = {
             cmd: {
               type: command,
@@ -46,6 +53,10 @@ const KittyCADBridgeClient = (port) => {
             cmd_id: uuidv4(),
             type: "modeling_cmd_req"
           };
+
+          // Call this callback when the server responds with the same cmd_id
+          if (cb) cbs[payload.cmd_id] = cb;
+
           ws.send(JSON.stringify(payload));
           return payload.cmd_id;
         };
@@ -74,6 +85,7 @@ const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((res
     }, 1000);
   }
 
+  const noop = () => {};
   const queue = [];
 
   const modeling_cmd_batch_req = (args) => {
@@ -157,7 +169,8 @@ const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((res
 
     let handlers = {};
     handlers["ice_server_info"] = (args) => {
-      console.log(args);
+      console.log(JSON.stringify(args));
+
       pc = new NodeDataChannel.PeerConnection("Peer1", {
         iceServers: toNodeDataChannelIceServers(args.ice_servers),
         iceTransportPolicy: "relay",
@@ -209,6 +222,7 @@ const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((res
             if (data == "done") { ignition(); } else { queue.push(text); }
           });
         });
+
         wss.on("listening", () => {
           console.log("Listening");
           resolve();
@@ -222,6 +236,7 @@ const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((res
       console.log(args);
       // If we attach to the session too soon, it
       // gets cut off for some reason.
+      // The reason is because trickle_ice gives us our first candidate.
       let session = new NodeDataChannel.RtcpReceivingSession();
       track.setMediaHandler(session);
     };
@@ -257,27 +272,25 @@ const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((res
       console.log("Wrote " + file.name);
     };
 
-    const cookie = `__Secure-next-auth.session-token=${sessionKey}`;
-
-    const url = "wss://api.kittycad.io/ws/modeling/commands?video_res_width=640&video_res_height=480";
+    console.log("Connecting to api.dev.zoo.dev");
+    const url = "wss://api.dev.zoo.dev/ws/modeling/commands?video_res_width=640&video_res_height=480";
     ws = new WebSocket(url, [], {
       protocolVersion: 13,
-      origin: "https://api.kittycad.io",
-      headers: {
-        "Host": "api.kittycad.io",
-        "Cookie": cookie
-      },
+      origin: "https://app.dev.zoo.dev",
     });
     ws.binaryType = "arraybuffer";
 
     ws.on("error", (e) => console.log("error", e));
     ws.on("upgrade", (e) => console.log("upgrade"));
-    ws.on("open", () => console.log("open"));
+    ws.on("open", () => {
+      console.log("open");
+      ws.send(JSON.stringify({ headers: { Authorization: `Bearer ${sessionKey}` } }));
+    });
     ws.on("close", (e) => console.log("close", e));
 
     const td = new TextDecoder();
     ws.on("message", (chunk) => {
-      // console.log("message");
+      console.log("message");
       let obj;
       if (chunk instanceof Buffer) {
         // console.log("Buffer");
@@ -288,8 +301,13 @@ const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((res
         obj = BSON.deserialize(chunk);
       }
 
+      console.log(obj);
+
       if (obj.success) {
         (handlers[obj.resp.type] || console.log)(obj.resp.data);
+
+        // Run any callbacks associated with this request_id (cmd_id)
+        (cbs[obj.request_id] || noop)(obj);
       } else {
         console.log(obj);
         // Reignite the queue command launcher on any failures.
