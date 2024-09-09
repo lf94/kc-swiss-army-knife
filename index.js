@@ -23,12 +23,13 @@ const KittyCADBridgeClient = (port) => {
   // User registered callbacks for commands that return data
 
    // Add more as needed or as they become available
-  const commands = [ "make_axes_gizmo", "make_plane", "sketch_mode_enable",
+  const commands = [ "make_axes_gizmo", "make_plane", "enable_sketch_mode",
   "start_path", "move_path_pen", "extend_path", "close_path", "sketch_mode_disable",
   "extrude", "export", "modeling_cmd_req", "reconfigure_stream",
   "import_files", "default_camera_zoom", "object_bring_to_front",
   "solid3d_fillet_edge", "solid3d_get_extrusion_face_info",
-  "solid3d_get_opposite_edge", "default_camera_focus_on"];
+  "solid3d_get_opposite_edge", "default_camera_focus_on", "default_camera_look_at",
+  "revolve"];
 
   const ws = new WebSocket("ws://localhost:" + port, []);
 
@@ -40,8 +41,14 @@ const KittyCADBridgeClient = (port) => {
       obj["done"] = () => ws.send("done");
 
       // Denotes batch start and ends
-      obj["batch_start"] = () => ws.send("batch_start");
-      obj["batch_end"] = () => ws.send("batch_end");
+      obj["batch_start"] = () => ws.send(JSON.stringify({
+        cmd: "batch_start",
+        type: "fake",
+      }));
+      obj["batch_end"] = () => ws.send(JSON.stringify({
+        cmd: "batch_end",
+        type: "fake",
+      }));
 
       for (const command of commands) {
         obj[command] = (args, cb) => {
@@ -91,13 +98,14 @@ const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((res
   const modeling_cmd_batch_req = (args) => {
     let requests = [];
     let a;
-    while ((a = queue.shift()) != "batch_end") {
+    while (!(a = queue.shift()).includes("batch_end")) {
       requests.push(a);
     }
-    const payload = {
-      requests,
-      type: "modeling_cmd_batch_req"
-    };
+    const payload = `{
+      "batch_id": "${uuidv4()}",
+      "requests": [${requests.join(",")}],
+      "type": "modeling_cmd_batch_req"
+    }`;
     return queue.push(payload);
   }
 
@@ -108,11 +116,21 @@ const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((res
 
     const send = (payload) => {
       let data;
+      let bufferParsed = false
 
       // Decode both to be re-encoded shortly.
       if (payload instanceof Buffer) {
         payload = JSON.parse(td.decode(payload));
-        console.log(payload);
+        bufferParsed = true
+      }
+
+      if (bufferParsed) {
+        payload = JSON.parse(payload);
+      }
+
+      if (typeof payload === "string" && payload.includes("modeling_cmd_batch_req")) {
+        ws.send(payload)
+        return
       }
 
       if (typeof payload === "string") {
@@ -248,7 +266,6 @@ const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((res
       });
     };
     handlers["modeling"] = (args) => {
-      console.log(args);
       if (queue.length == 0) {
         console.log("No more commands");
         return;
@@ -258,7 +275,7 @@ const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((res
       let cmd = queue.shift();
 
       // Unload the batch into the queue as a single command.
-      if (cmd == "batch_start") {
+      if (cmd.includes("batch_start")) {
         modeling_cmd_batch_req();
         cmd = queue.shift();
       }
@@ -284,7 +301,7 @@ const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((res
     ws.on("upgrade", (e) => console.log("upgrade"));
     ws.on("open", () => {
       console.log("open");
-      ws.send(JSON.stringify({ headers: { Authorization: `Bearer ${sessionKey}` } }));
+      ws.send(JSON.stringify({ type: "headers", headers: { Authorization: `Bearer ${sessionKey}` } }));
     });
     ws.on("close", (e) => console.log("close", e));
 
@@ -321,8 +338,11 @@ const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((res
     // Kick off the requests.
     const ignition = () => {
       if (queue.length == 0) return;
-      const cmd = queue.shift();
-      //console.log(cmd);
+      let cmd = queue.shift()
+      if (cmd.includes("batch_start")) {
+        modeling_cmd_batch_req();
+        cmd = queue.shift();
+      }
       send(cmd);
     };
   });
