@@ -24,9 +24,11 @@ const KittyCADBridgeClient = (port) => {
 
    // Add more as needed or as they become available
   const commands = [ "make_axes_gizmo", "make_plane", "enable_sketch_mode",
+  "sketch_mode_enable",
   "start_path", "move_path_pen", "extend_path", "close_path", "sketch_mode_disable",
   "extrude", "export", "modeling_cmd_req", "reconfigure_stream",
   "import_files", "default_camera_zoom", "object_bring_to_front",
+  "zoom_to_fit",
   "solid3d_fillet_edge", "solid3d_get_extrusion_face_info",
   "solid3d_get_opposite_edge", "default_camera_focus_on", "default_camera_look_at",
   "revolve"];
