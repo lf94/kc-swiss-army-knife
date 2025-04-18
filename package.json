@@ -12,7 +12,7 @@
     "bson": "^6.2.0",
     "dgram": "^1.0.1",
     "lindenmayer": "^1.5.4",
-    "node-datachannel": "^0.5.0",
+    "node-datachannel": "^0.26.0",
     "ws": "^8.14.2"
   }
 }

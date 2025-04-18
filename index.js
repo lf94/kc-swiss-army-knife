@@ -6,6 +6,8 @@ const fs = require("node:fs");
 const NodeDataChannelModule = import("node-datachannel");
 const { WebSocket, WebSocketServer } = require("ws");
 
+const URL_API_ZOO_DEV = process.env.URL_API_ZOO_DEV ?? "wss://api.zoo.dev";
+
 const clientVideo = dgram.createSocket("udp4");
 let wss;
 
@@ -31,7 +33,7 @@ const KittyCADBridgeClient = (port) => {
   "zoom_to_fit",
   "solid3d_fillet_edge", "solid3d_get_extrusion_face_info",
   "solid3d_get_opposite_edge", "default_camera_focus_on", "default_camera_look_at",
-  "revolve"];
+  "revolve", "boolean_union", "boolean_intersection", "boolean_subtract"];
 
   const ws = new WebSocket("ws://localhost:" + port, []);
 
@@ -202,15 +204,15 @@ const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((res
       // gst-launch-1.0 udpsrc address=127.0.0.1 port=5000 caps="application/x-rtp" ! queue ! rtph264depay ! video/x-h264,stream-format=byte-stream ! queue ! avdec_h264 ! queue ! autovideosink
       // On ArchLinux you may need the gst-libav package.
       // This code was taken from the node-datachannel media example.
-      let video = new NodeDataChannel.Video('video', 'RecvOnly');
-      video.addH264Codec(102);
+      // let video = new NodeDataChannel.Video('video', 'RecvOnly');
+      // video.addH264Codec(102);
 
-      track = pc.addTrack(video);
-      track.onMessage((msg) => {
-        clientVideo.send(msg, 5000, '127.0.0.1', (err, n) => {
-          if (err) console.log(err, n);
-        });
-      });
+      // track = pc.addTrack(video);
+      // track.onMessage((msg) => {
+      //   clientVideo.send(msg, 5000, '127.0.0.1', (err, n) => {
+      //     if (err) console.log(err, n);
+      //   });
+      // });
 
       pc.onLocalDescription((sdp, type) => {
         console.log("sdp_offer");
@@ -223,7 +225,10 @@ const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((res
       });
 
       dc = pc.createDataChannel("unreliable_modeling_cmds");
-      dc.onOpen(() => {
+      dc.onMessage(() => {
+        console.log("unreliable_modeling_cmds message");
+      });
+      const dcOnOpen = () => {
         console.log("unreliable_modeling_cmds open");
 
         if (fnCmds) {
@@ -247,9 +252,9 @@ const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((res
           console.log("Listening");
           resolve();
         });
-      });
-      dc.onMessage(() => {
-        console.log("unreliable_modeling_cmds message");
+      };
+      dc.onOpen(() => {
+        console.log("dc is open");
       });
     };
     handlers["trickle_ice"] = (args) => {
@@ -257,8 +262,8 @@ const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((res
       // If we attach to the session too soon, it
       // gets cut off for some reason.
       // The reason is because trickle_ice gives us our first candidate.
-      let session = new NodeDataChannel.RtcpReceivingSession();
-      track.setMediaHandler(session);
+      // let session = new NodeDataChannel.RtcpReceivingSession();
+      // track.setMediaHandler(session);
     };
     handlers["sdp_answer"] = (args) => {
       console.log(args);
@@ -291,18 +296,19 @@ const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((res
       console.log("Wrote " + file.name);
     };
 
-    console.log("Connecting to api.dev.zoo.dev");
-    const url = "wss://api.dev.zoo.dev/ws/modeling/commands?video_res_width=640&video_res_height=480";
+    console.log(`Connecting to ${URL_API_ZOO_DEV}`);
+    const url = `${URL_API_ZOO_DEV}/ws/modeling/commands?video_res_width=640&video_res_height=480`;
     ws = new WebSocket(url, [], {
       protocolVersion: 13,
-      origin: "https://app.dev.zoo.dev",
+      // Fake it to make the remote end happy.
+      origin: "https://app.zoo.dev",
     });
     ws.binaryType = "arraybuffer";
 
     ws.on("error", (e) => console.log("error", e));
     ws.on("upgrade", (e) => console.log("upgrade"));
     ws.on("open", () => {
-      console.log("open");
+      console.log("open", sessionKey);
       ws.send(JSON.stringify({ type: "headers", headers: { Authorization: `Bearer ${sessionKey}` } }));
     });
     ws.on("close", (e) => console.log("close", e));
@@ -320,7 +326,7 @@ const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((res
         obj = BSON.deserialize(chunk);
       }
 
-      console.log(obj);
+      console.log(JSON.stringify(obj));
 
       if (obj.success) {
         (handlers[obj.resp.type] || console.log)(obj.resp.data);

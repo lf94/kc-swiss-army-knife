@@ -5,7 +5,7 @@ const { KittyCADBridge, KittyCADBridgeClient } = require("../index");
 const path = "bunny.obj";
 const data = fs.readFileSync(path);
 
-KittyCADBridge("0fe6f258-42cd-4dae-be94-35babb0b2e17")
+KittyCADBridge("api-65d79150-d400-448e-96f2-c0ac55edf144")
 .then(() => KittyCADBridgeClient(4999))
 .then((client) => {
   Object.assign(global, client);
