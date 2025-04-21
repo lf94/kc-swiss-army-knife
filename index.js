@@ -1,22 +1,16 @@
+// In the past this code supported video streaming.
+// I've come to learn, video streaming is only worth it if the whole stack
+// you use supports it very well.
+// Geometry data is king.
+
 // Derived from KCMA https://github.com/KittyCAD/modeling-app
 const { BSON, EJSON } = require("bson");
 const { randomUUID: uuidv4 } = require('node:crypto');
 const dgram = require("dgram");
 const fs = require("node:fs");
-const NodeDataChannelModule = import("node-datachannel");
 const { WebSocket, WebSocketServer } = require("ws");
 
 const URL_API_ZOO_DEV = process.env.URL_API_ZOO_DEV ?? "wss://api.zoo.dev";
-
-const clientVideo = dgram.createSocket("udp4");
-let wss;
-
-const prettyUnits = (g, us) => (n, d) => {
-  if (n > 1024) return prettyBytes(n / g, d + 1);
-  else return [ n, us[d] ];
-};
-
-const prettyBytes = prettyUnits(1024, ["B","KiB","MiB","GiB","TiB","PiB"]);
 
 const cbs = {};
 
@@ -33,13 +27,14 @@ const KittyCADBridgeClient = (port) => {
   "zoom_to_fit",
   "solid3d_fillet_edge", "solid3d_get_extrusion_face_info",
   "solid3d_get_opposite_edge", "default_camera_focus_on", "default_camera_look_at",
-  "revolve", "boolean_union", "boolean_intersection", "boolean_subtract"];
+  "revolve", "boolean_union", "boolean_intersection", "boolean_subtract",
+  "take_snapshot", "object_set_material_params_pbr", "entity_linear_pattern_transform"];
 
   const ws = new WebSocket("ws://localhost:" + port, []);
 
   return new Promise((resolve, reject) => {
     ws.on("open", () => {
-      console.log("open bridge");
+      console.log("Client connected to bridge");
 
       // Signals the server to send all the commands to KittyCAD.
       obj["done"] = () => ws.send("done");
@@ -79,23 +74,7 @@ const KittyCADBridgeClient = (port) => {
 };
 module.exports.KittyCADBridgeClient = KittyCADBridgeClient;
 
-const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((resolve, reject) => {
-  let stats = { bytesSentPerSec: 0, bytesSentTotal: 0, guesstimateRam: 0, reqPerSeq: 0, shapes: 0 };
-
-  if (isDebug) {
-    setInterval(() => {
-      const [ n, u1 ] = prettyBytes(stats.bytesSentPerSec, 0);
-      console.log("Speed: " + n.toFixed(2) + u1 + "/s");
-      const [ m, u2 ] = prettyBytes(stats.bytesSentTotal, 0);
-      console.log("Total: " + m + u2);
-      // const [ o, u3 ] = prettyBytes(stats.guesstimateRam, 0);
-      // console.log("Guesstimate RAM: " + o + u3);
-      console.log("Req/s: " + stats.reqPerSeq);
-      stats.bytesSentPerSec = 0;
-      stats.reqPerSeq = 0;
-    }, 1000);
-  }
-
+const KittyCADBridge = (sessionKey, fnCmds) => new Promise((resolve, reject) => {
   const noop = () => {};
   const queue = [];
 
@@ -113,247 +92,172 @@ const KittyCADBridge = (sessionKey, fnCmds, isDebug = false) => new Promise((res
     return queue.push(payload);
   }
 
-  NodeDataChannelModule.then((NodeDataChannel) => {
-    NodeDataChannel.initLogger("Debug");
+  const te = new TextEncoder();
 
-    const te = new TextEncoder();
+  const send = (payload) => {
+    let data;
+    let bufferParsed = false
 
-    const send = (payload) => {
-      let data;
-      let bufferParsed = false
+    // Decode both to be re-encoded shortly.
+    if (payload instanceof Buffer) {
+      payload = JSON.parse(td.decode(payload));
+      bufferParsed = true
+    }
 
-      // Decode both to be re-encoded shortly.
-      if (payload instanceof Buffer) {
-        payload = JSON.parse(td.decode(payload));
-        bufferParsed = true
-      }
+    if (bufferParsed) {
+      payload = JSON.parse(payload);
+    }
 
-      if (bufferParsed) {
-        payload = JSON.parse(payload);
-      }
+    if (typeof payload === "string" && payload.includes("modeling_cmd_batch_req")) {
+      ws.send(payload)
+      return
+    }
 
-      if (typeof payload === "string" && payload.includes("modeling_cmd_batch_req")) {
-        ws.send(payload)
-        return
-      }
+    if (typeof payload === "string") {
+      payload = JSON.parse(payload);
+    }
 
-      if (typeof payload === "string") {
-        payload = JSON.parse(payload);
-      }
+    data = JSON.stringify(payload);
 
-      data = JSON.stringify(payload);
-
-      if (payload.cmd && payload.cmd.type == "import_files") {
-        payload.cmd.files.forEach((f) => {
-          // Yep, .data.data was a pain to learn.
-          // Caused by serializing from Buffer to JSON and back.
-          f.data = Buffer.from(f.data.data);
-        });
-        data = BSON.serialize(payload);
-      }
-
-      ws.send(data);
-
-      stats.bytesSentPerSec += data.length;
-      stats.bytesSentTotal += data.length;
-      stats.reqPerSeq += 1;
-    };
-
-    const toNodeDataChannelIceServers = (iceServers) => {
-      const iceServer = iceServers[0];
-      const username = iceServer.username;
-      const password = iceServer.credential;
-      return iceServer.urls.map((url_) => {
-        // Create a fake URL to make URL class happy.
-        const url = new URL("http://" + url_.slice(5));
-        return {
-          hostname: url.hostname,
-          port: parseInt(url.port),
-          username,
-          password,
-          relayType: "turnUdp",
-        }
+    if (payload.cmd && payload.cmd.type == "import_files") {
+      payload.cmd.files.forEach((f) => {
+        // Yep, .data.data was a pain to learn.
+        // Caused by serializing from Buffer to JSON and back.
+        f.data = Buffer.from(f.data.data);
       });
-    };
+      data = BSON.serialize(payload);
+    }
 
-    let ws, pc, dc;
-    let track;
+    ws.send(data);
+  };
 
-    const close = () => {
-      wss.close();
-      dc.close();
-      pc.close();
-      ws.close();
-    };
+  let ws, wss;
 
-    process.once('SIGTERM', close);
-    process.once('SIGINT', close);
+  const close = () => {
+    ws.close();
+  };
 
-    let handlers = {};
-    handlers["ice_server_info"] = (args) => {
-      console.log(JSON.stringify(args));
+  process.once('SIGTERM', close);
+  process.once('SIGINT', close);
 
-      pc = new NodeDataChannel.PeerConnection("Peer1", {
-        iceServers: toNodeDataChannelIceServers(args.ice_servers),
-        iceTransportPolicy: "relay",
-        bundlePolicy: "max-bundle",
+  let handlers = {};
+
+  handlers["modeling_session_data"] = (args) => {
+    // Open a stream listening for JSON commands.
+    // This creates a bridge between our programs and
+    // the KittyCAD service.
+    console.log("Creating bridge");
+    wss = new WebSocketServer({ port: 4999 });
+    wss.on("connection", (ws) => {
+      console.log("Bridge received connection");
+      ws.on("message", (data) => {
+        console.log("< message");
+        const text = td.decode(data);
+        console.log(text);
+        if (data == "done") { ignition(); } else { queue.push(text); }
       });
-
-      // Get a video stream (but overall not necessary)
-      // You can quickly test this with:
-      // gst-launch-1.0 udpsrc address=127.0.0.1 port=5000 caps="application/x-rtp" ! queue ! rtph264depay ! video/x-h264,stream-format=byte-stream ! queue ! avdec_h264 ! queue ! autovideosink
-      // On ArchLinux you may need the gst-libav package.
-      // This code was taken from the node-datachannel media example.
-      // let video = new NodeDataChannel.Video('video', 'RecvOnly');
-      // video.addH264Codec(102);
-
-      // track = pc.addTrack(video);
-      // track.onMessage((msg) => {
-      //   clientVideo.send(msg, 5000, '127.0.0.1', (err, n) => {
-      //     if (err) console.log(err, n);
-      //   });
-      // });
-
-      pc.onLocalDescription((sdp, type) => {
-        console.log("sdp_offer");
-        const payload = {
-          type: "sdp_offer",
-          offer: { type: "offer", sdp, }
-        };
-        pc.setLocalDescription(sdp);
-        send(payload);
-      });
-
-      dc = pc.createDataChannel("unreliable_modeling_cmds");
-      dc.onMessage(() => {
-        console.log("unreliable_modeling_cmds message");
-      });
-      const dcOnOpen = () => {
-        console.log("unreliable_modeling_cmds open");
-
-        if (fnCmds) {
-          fnCmds();
-          ignition();
-        }
-
-        // Open a stream listening for JSON commands.
-        // This creates a bridge between our programs and
-        // the KittyCAD service.
-        wss = new WebSocketServer({ port: 4999 });
-        wss.on("connection", (ws) => {
-          console.log("Connected");
-          ws.on("message", (data) => {
-            const text = td.decode(data);
-            if (data == "done") { ignition(); } else { queue.push(text); }
-          });
-        });
-
-        wss.on("listening", () => {
-          console.log("Listening");
-          resolve();
-        });
-      };
-      dc.onOpen(() => {
-        console.log("dc is open");
-      });
-    };
-    handlers["trickle_ice"] = (args) => {
-      console.log(args);
-      // If we attach to the session too soon, it
-      // gets cut off for some reason.
-      // The reason is because trickle_ice gives us our first candidate.
-      // let session = new NodeDataChannel.RtcpReceivingSession();
-      // track.setMediaHandler(session);
-    };
-    handlers["sdp_answer"] = (args) => {
-      console.log(args);
-      pc.setRemoteDescription(args.answer.sdp, args.answer.type);
-      pc.onLocalCandidate((candidate, mid) => {
-        pc.addRemoteCandidate(candidate, mid);
-      });
-    };
-    handlers["modeling"] = (args) => {
-      if (queue.length == 0) {
-        console.log("No more commands");
-        return;
-      }
-
-      // Continue to fire off commands in the queue.
-      let cmd = queue.shift();
-
-      // Unload the batch into the queue as a single command.
-      if (cmd.includes("batch_start")) {
-        modeling_cmd_batch_req();
-        cmd = queue.shift();
-      }
-
-      console.log(cmd);
-      send(cmd);
-    };
-    handlers["export"] = (args) => {
-      const file = args.files[0];
-      fs.writeFileSync(file.name, file.contents.read(0, file.contents.length));
-      console.log("Wrote " + file.name);
-    };
-
-    console.log(`Connecting to ${URL_API_ZOO_DEV}`);
-    const url = `${URL_API_ZOO_DEV}/ws/modeling/commands?video_res_width=640&video_res_height=480`;
-    ws = new WebSocket(url, [], {
-      protocolVersion: 13,
-      // Fake it to make the remote end happy.
-      origin: "https://app.zoo.dev",
-    });
-    ws.binaryType = "arraybuffer";
-
-    ws.on("error", (e) => console.log("error", e));
-    ws.on("upgrade", (e) => console.log("upgrade"));
-    ws.on("open", () => {
-      console.log("open", sessionKey);
-      ws.send(JSON.stringify({ type: "headers", headers: { Authorization: `Bearer ${sessionKey}` } }));
-    });
-    ws.on("close", (e) => console.log("close", e));
-
-    const td = new TextDecoder();
-    ws.on("message", (chunk) => {
-      console.log("message");
-      let obj;
-      if (chunk instanceof Buffer) {
-        // console.log("Buffer");
-        obj = JSON.parse(td.decode(chunk));
-      }
-      if (chunk instanceof ArrayBuffer) {
-        // console.log("ArrayBuffer");
-        obj = BSON.deserialize(chunk);
-      }
-
-      console.log(JSON.stringify(obj));
-
-      if (obj.success) {
-        (handlers[obj.resp.type] || console.log)(obj.resp.data);
-
-        // Run any callbacks associated with this request_id (cmd_id)
-        (cbs[obj.request_id] || noop)(obj);
-      } else {
-        console.log(obj);
-        // Reignite the queue command launcher on any failures.
-        ignition();
-      }
     });
 
-    setInterval(() => { console.log("ping"); ws.ping(); }, 10000);
-    ws.on("pong", () => console.log("pong"));
+    wss.on("listening", () => {
+      console.log("Bridge listening for clients");
+      resolve();
+    });
 
-    // Kick off the requests.
-    const ignition = () => {
-      if (queue.length == 0) return;
-      let cmd = queue.shift()
-      if (cmd.includes("batch_start")) {
-        modeling_cmd_batch_req();
-        cmd = queue.shift();
-      }
-      send(cmd);
-    };
+    // if (fnCmds) {
+    //   fnCmds();
+    //   ignition();
+    // }
+  };
+
+  handlers["modeling"] = (args) => {
+    if (args.modeling_response.type === "take_snapshot") {
+      const contents = Buffer.from(args.modeling_response.data.contents, 'base64url')
+      fs.writeFileSync("out.png", contents);
+      console.log("Wrote " + "out.png");
+    }
+
+    if (queue.length == 0) {
+      console.log("No more commands");
+      return;
+    }
+
+    // Continue to fire off commands in the queue.
+    let cmd = queue.shift();
+
+    // Unload the batch into the queue as a single command.
+    if (cmd.includes("batch_start")) {
+      modeling_cmd_batch_req();
+      cmd = queue.shift();
+    }
+
+    // console.log(cmd);
+    send(cmd);
+  };
+
+  handlers["export"] = (args) => {
+    const file = args.files[0];
+    fs.writeFileSync(file.name, file.contents.read(0, file.contents.length));
+    console.log("Wrote " + file.name);
+  };
+
+  console.log(`Connecting to ${URL_API_ZOO_DEV}`);
+  const url = `${URL_API_ZOO_DEV}/ws/modeling/commands?webrtc=false`;
+  ws = new WebSocket(url, [], {
+    protocolVersion: 13,
+    // Fake it to make the remote end happy.
+    origin: "https://app.zoo.dev",
   });
+  ws.binaryType = "arraybuffer";
+
+  ws.on("error", (e) => console.log("error", e));
+  ws.on("upgrade", (e) => console.log("Websocket upgraded protocol"));
+  ws.on("open", () => {
+    console.log("Websocket opened with session key", sessionKey);
+    ws.send(JSON.stringify({ type: "headers", headers: { Authorization: `Bearer ${sessionKey}` } }));
+  });
+  ws.on("close", (...args) => console.log("KittyCAD API closed", args));
+
+  const td = new TextDecoder();
+  ws.on("message", (chunk) => {
+    console.log("> message");
+    let obj;
+    if (chunk instanceof Buffer) {
+      // console.log("Buffer");
+      obj = JSON.parse(td.decode(chunk));
+      console.log(JSON.stringify(obj));
+    }
+    // These are usually massive, don't print them.
+    // WARNING: YOU MAY MISS AN ERROR!
+    if (chunk instanceof ArrayBuffer) {
+      // console.log("ArrayBuffer");
+      obj = BSON.deserialize(chunk);
+    }
+
+    if (obj.success) {
+      (handlers[obj.resp.type] || console.log)(obj.resp.data);
+
+      // Run any callbacks associated with this request_id (cmd_id)
+      (cbs[obj.request_id] || noop)(obj);
+    } else {
+      // console.log(obj);
+      // Reignite the queue command launcher on any failures.
+      ignition();
+    }
+  });
+
+  setInterval(() => { console.log("ping"); ws.ping(); }, 10000);
+  ws.on("pong", () => console.log("pong"));
+
+  // Kick off the requests.
+  const ignition = () => {
+    if (queue.length == 0) return;
+    let cmd = queue.shift()
+    if (cmd.includes("batch_start")) {
+      modeling_cmd_batch_req();
+      cmd = queue.shift();
+    }
+    send(cmd);
+  };
 });
 
 module.exports.KittyCADBridge = KittyCADBridge;
